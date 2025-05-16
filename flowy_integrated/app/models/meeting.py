@@ -1,11 +1,11 @@
 # app/models/meeting.py
 from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional, Any # Any 추가
+from typing import List, Optional, Any
 
 # --- 공통 모델 ---
 class AttendeeInfo(BaseModel):
     name: str = Field(..., description="참여자 이름")
-    email: Optional[EmailStr] = Field(None, description="참여자 이메일 (선택 사항, 이메일 전송 시 필요)")
+    email: Optional[EmailStr] = Field(None, description="참여자 이메일 (선택 사항)")
     role: Optional[str] = Field(None, description="참여자 역할 (선택 사항)")
 
 # --- Form으로 받을 JSON 문자열 내부 구조를 위한 모델 ---
@@ -48,11 +48,9 @@ class MeetingFeedbackResponseModel(BaseModel):
     )
 
 # --- 통합 분석 결과 모델 ---
-# MeetingInfoBase 모델은 MeetingMetadata로 대체되거나, MeetingMetadata의 필드를 사용합니다.
-# 여기서는 FullAnalysisResult가 MeetingMetadata를 직접 사용하도록 수정합니다.
 class FullAnalysisResult(BaseModel):
-    meeting_info: MeetingMetadata # 이전 MeetingInfoBase 대신 MeetingMetadata 사용
-    # stt_result: Optional[STTResponse] = None
+    meeting_info: MeetingMetadata # MeetingMetadata 사용
+    # stt_result: Optional[STTResponse] = None # STT 결과는 포함 (필요시 제외 가능)
     summary_result: SummarizationResponse
     action_items_result: ActionAssignmentResponse
     feedback_result: MeetingFeedbackResponseModel
