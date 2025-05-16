@@ -20,7 +20,7 @@ router = APIRouter()
 
 @router.post("/analyze", response_model=FullAnalysisResult)
 async def analyze_meeting_endpoint(
-    metadata_json: str = Form(..., description="회의 주제, 일시, 장소, 참석자 정보(배열)를 포함하는 JSON 문자열", alias="metadata"), # 프론트와 필드명 일치 (예: "metadata")
+    metadata_json: str = Form(..., description="회의 주제, 일시, 장소, 참석자 정보(배열)를 포함하는 JSON 문자열"), # 프론트와 필드명 일치 (예: "metadata")
     rc_file: Optional[UploadFile] = File(None, description="녹음 파일 (m4a, wav 등)"),
     openai_client: OpenAI = Depends(get_openai_client),
     stt_pipeline: Optional[Any] = Depends(get_stt_pipeline)
