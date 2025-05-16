@@ -45,30 +45,32 @@ class ActionAssignmentResponse(BaseModel):
     message: Optional[str] = Field(None, description="처리 결과 메시지")
 
 # --- 회의 피드백 (Meeting Feedback / Relevance Analysis) 관련 모델 ---
-class OverallStatisticsModel(BaseModel):
-    sentences: int = Field(description="전체 문장 수")
-    necessary: int = Field(description="필요 문장 수")
-    unnecessary: int = Field(description="불필요 문장 수")
-    error: int = Field(description="오류 문장 수")
+# OverallStatisticsModel을 더 간소화하거나, 필요한 필드만 직접 MeetingFeedbackResponseModel에 포함
+class SimplifiedFeedbackStats(BaseModel):
     necessary_ratio: float = Field(description="필요 문장 비율 (%)")
     unnecessary_ratio: float = Field(description="불필요 문장 비율 (%)")
-    error_ratio: float = Field(description="오류 문장 비율 (%)")
+    # error_ratio도 필요하다면 포함 가능
 
-class RepresentativeUnnecessarySentenceModel(BaseModel):
+class RepresentativeUnnecessarySentenceModel(BaseModel): # 이전과 동일
     sentence: str = Field(description="대표적인 불필요 문장")
     reason: str = Field(description="불필요하다고 판단한 이유")
 
-class MeetingFeedbackResponseModel(BaseModel):
-    overall_statistics: OverallStatisticsModel
-    representative_unnecessary: List[RepresentativeUnnecessarySentenceModel]
-    message: Optional[str] = Field(None, description="처리 결과 메시지")
-    rc_txt_splitted: Optional[List[str]] = Field(None, description="문장 분리 결과 (클라이언트 요청 시)")
+class MeetingFeedbackResponseModel(BaseModel): # 이름 유지 또는 변경 가능
+    # overall_statistics 필드 대신 필요한 비율만 직접 포함
+    necessary_ratio: float = Field(description="필요 문장 비율 (%)")
+    unnecessary_ratio: float = Field(description="불필요_문장 비율 (%)")
+    representative_unnecessary: List[RepresentativeUnnecessarySentenceModel] = Field(description="대표적인 불필요 문장 목록 (최대 5개)")
+    # message 필드 제거
+    # rc_txt_splitted 필드 제거
 
+# FeedbackRequest는 이전과 동일하게 유지 가능 (subj, info_n, num_representative_unnecessary 등)
 class FeedbackRequest(BaseModel):
     rc_txt: str = Field(..., description="분석할 원본 텍스트 (회의록)")
     subj: Optional[str] = Field(None, description="회의 주제 (선택 사항)")
     info_n: List[AttendeeInfo] = Field(..., description="참석자 정보 리스트 (필수)")
-    num_representative_unnecessary: Optional[int] = Field(5, description="대표 불필요 문장 개수")
+    # num_representative_unnecessary 필드를 여기서 제거합니다.
+    # meeting_goal: Optional[str] = Field(None, description="회의 목표 (선택 사항, 분석 정확도 향상)") # 필요시 추가
+
 
 # --- 통합 분석 요청 및 응답 모델 (필요시 사용) ---
 class FullAnalysisRequest(MeetingInfoBase):
