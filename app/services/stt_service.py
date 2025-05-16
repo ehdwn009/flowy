@@ -204,6 +204,8 @@ async def process_uploaded_rc_file_to_text(
     temp_file_name = f"upload_{unique_id}{file_extension}"
     temp_file_path = os.path.join(TEMP_UPLOAD_DIR, temp_file_name)
 
+    stt_input_audio_path = temp_file_path # STT 처리에 사용될 최종 오디오 파일 경로
+    converted_wav_temp_path = None # 변환된 WAV 파일이 저장될 경로
     transcribed_text = "" # 결과 변수 초기화
 
     try:
@@ -223,17 +225,50 @@ async def process_uploaded_rc_file_to_text(
                 await rc_file.close() # UploadFile 객체의 close()는 비동기일 수 있음
                 print(f"  업로드 파일 핸들({rc_file.filename}) 닫기 완료.")
 
+        # DEBUGGING: Check values before M4A conversion conditional
+        print(f"  DEBUG: _PACKAGES_AVAILABLE = {_PACKAGES_AVAILABLE}")
+        print(f"  DEBUG: temp_file_path = '{temp_file_path}'") # 경로를 명확히 보기 위해 따옴표 추가
+        print(f"  DEBUG: file_extension from rc_file.filename = '{os.path.splitext(rc_file.filename)[1] if rc_file.filename else ".m4a"}'")
+        print(f"  DEBUG: temp_file_path.lower().endswith('.m4a') = {temp_file_path.lower().endswith('.m4a')}")
 
-        # 2. STT 핵심 처리 함수 호출 (동기 함수이므로 비동기적으로 실행)
+        # 2. (필요시) M4A 파일을 WAV로 변환
+        # _PACKAGES_AVAILABLE은 pydub 로드 성공 여부도 포함
+        if _PACKAGES_AVAILABLE and temp_file_path.lower().endswith(".m4a"):
+            print(f"  M4A 파일 감지: {temp_file_path}. WAV로 변환 시도.")
+            try:
+                # 변환된 WAV 파일 이름 생성
+                wav_temp_file_name = f"converted_{unique_id}.wav"
+                converted_wav_temp_path = os.path.join(TEMP_UPLOAD_DIR, wav_temp_file_name)
+
+                # pydub 변환 함수 (동기)
+                def convert_m4a_to_wav_sync(m4a_path, wav_path):
+                    audio = AudioSegment.from_file(m4a_path, format="m4a")
+                    audio.export(wav_path, format="wav")
+                    print(f"  M4A를 WAV로 변환 완료: {m4a_path} -> {wav_path}")
+
+                # 동기 함수를 비동기적으로 실행
+                await asyncio.to_thread(convert_m4a_to_wav_sync, temp_file_path, converted_wav_temp_path)
+                stt_input_audio_path = converted_wav_temp_path # STT에는 변환된 WAV 파일 사용
+            except Exception as e_conv:
+                print(f"STT 서비스 경고: M4A 파일을 WAV로 변환 중 오류 발생 ({type(e_conv).__name__}: {e_conv}). 원본 M4A 파일로 STT 시도.")
+                # 변환 실패 시, 생성되었을 수 있는 변환 파일을 정리하고 원본 사용
+                if converted_wav_temp_path and os.path.exists(converted_wav_temp_path):
+                    try: os.remove(converted_wav_temp_path)
+                    except Exception: pass
+                converted_wav_temp_path = None # 변환 실패했으므로 경로 초기화
+                # stt_input_audio_path는 그대로 temp_file_path (원본 M4A)
+
+
+        # 3. STT 핵심 처리 함수 호출 (동기 함수이므로 비동기적으로 실행)
         transcribed_text = await asyncio.to_thread(
             _perform_stt_with_pipeline,
-            audio_path=temp_file_path,
+            audio_path=stt_input_audio_path, # 원본 또는 변환된 파일 경로 사용
             stt_pipeline=stt_pipeline_instance,
             language=target_language,
             chunk_length_s=pipeline_chunk_length_s,
             stride_length_s=pipeline_stride_length_s
         )
-        
+
         processing_time = time.time() - service_start_time
         # _format_time 함수가 현재 스코프에 정의되어 있는지 확인!
         # 만약 stt_service.py 최상단에 있다면 문제 없음.
@@ -247,13 +282,21 @@ async def process_uploaded_rc_file_to_text(
         raise # 현재는 모든 예외를 RuntimeError로 래핑하지 않고 그대로 라우터로 전달
 
     finally:
-        # 임시 파일 삭제 시도
+        # 임시 변환 WAV 파일 삭제 (생성된 경우)
+        if converted_wav_temp_path and os.path.exists(converted_wav_temp_path):
+            try:
+                os.remove(converted_wav_temp_path)
+                print(f"  임시 변환 WAV 파일 삭제 완료: {converted_wav_temp_path}")
+            except Exception as e_remove_wav:
+                print(f"STT 서비스 경고: 임시 변환 WAV 파일 삭제 중 오류 '{converted_wav_temp_path}' - {e_remove_wav}")
+
+        # 원본 임시 업로드 파일 삭제
         if os.path.exists(temp_file_path):
             try:
                 # (선택적) 파일 삭제 전 아주 짧은 지연 시간 추가 (OS가 파일 잠금 해제할 시간)
                 # await asyncio.sleep(0.1) # 이 부분은 신중히 사용, 꼭 필요한지 테스트 필요
                 os.remove(temp_file_path)
-                print(f"  임시 파일 삭제 완료: {temp_file_path}")
+                print(f"  원본 임시 업로드 파일 삭제 완료: {temp_file_path}")
             except PermissionError as e_perm:
                 # 이 오류가 계속 발생한다면, 파일이 여전히 잠겨있다는 의미
                 print(f"STT 서비스 경고: 임시 파일 삭제 실패 (PermissionError) '{temp_file_path}' - {e_perm}")
