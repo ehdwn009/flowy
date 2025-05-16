@@ -79,6 +79,12 @@ def _remove_basic_repetitions(text: str, min_repeat_len: int = 3, max_repeat_tim
     return processed_text
 
 
+def _format_time(seconds: float) -> str: # <--- 이 함수 정의 확인!
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
 def _post_process_transcription(raw_text: str) -> str:
     """
     STT 결과를 후처리하여 가독성을 높이고 오류를 줄입니다.
@@ -143,71 +149,41 @@ def _apply_stt_py_sentence_deduplication(text: str) -> str:
 
 
 # === STT 핵심 처리 함수 (Hugging Face Pipeline 활용) ===
-async def _perform_stt_with_pipeline(
+def _perform_stt_with_pipeline( # 동기 함수
     audio_path: str,
-    stt_pipeline: Any, # 미리 로드된 Hugging Face pipeline 객체
-    language: Optional[str] = "ko", # 대상 언어 (pipeline 생성 시 지정 가능)
-    chunk_length_s: int = 30,       # 파이프라인 청크 길이 (초)
-    stride_length_s: int = 5,       # 파이프라인 스트라이드 길이 (초, 오버랩 관련)
-    # generate_kwargs: Optional[dict] = None # 모델 생성 관련 추가 파라미터
+    stt_pipeline: Any,
+    language: Optional[str] = "ko",
+    chunk_length_s: int = 30,
+    stride_length_s: int = 5,
 ) -> str:
-    """
-    Hugging Face ASR Pipeline을 사용하여 오디오 파일에서 텍스트를 추출합니다.
-    """
+    # ... (이전과 동일한 STT 처리 로직) ...
+    # 이 함수는 파일을 읽기만 하고, 열거나 닫는 책임을 지지 않음 (경로만 받음)
     if not _PIPELINE_AVAILABLE or stt_pipeline is None:
         print("STT 서비스 경고: ASR 파이프라인 사용 불가. 더미 결과를 반환합니다.")
-        await asyncio.sleep(0.1) # 비동기 함수 흉내
+        time.sleep(0.1)
         return f"[더미 STT(Pipeline): {os.path.basename(audio_path)} (파이프라인/패키지 문제)]"
 
     if not os.path.exists(audio_path):
+        # 이 오류는 실제로는 잘 발생하지 않아야 함 (바로 위에서 생성하므로)
         raise FileNotFoundError(f"STT 서비스 내부 오류: 오디오 파일 없음 - {audio_path}")
 
-    print(f"  Pipeline STT 처리 시작: {audio_path}, lang={language}, chunk={chunk_length_s}s, stride={stride_length_s}s")
-    
+    print(f"  Pipeline STT 처리 시작 (동기): {audio_path}, lang={language}, chunk={chunk_length_s}s, stride={stride_length_s}s")
     try:
-        # Hugging Face pipeline은 파일 경로를 직접 받거나, 로드된 오디오 데이터를 받을 수 있음
-        # 여기서는 파일 경로를 사용
-        # generate_kwargs = generate_kwargs or {} # whisper 모델의 generate 함수에 전달될 인자들
-        # if language and "language" not in generate_kwargs: # 파이프라인 생성시 언어 지정했다면 불필요할 수 있음
-        #     generate_kwargs["language"] = language
-        
-        # 파이프라인 호출 시 generate_kwargs 전달 방식 확인 필요
-        # (예시: result = stt_pipeline(audio_path, generate_kwargs=generate_kwargs, ...))
-
-        # 현재 Whisper 파이프라인은 generate_kwargs를 직접 받지 않고,
-        # pipeline 생성 시 model_kwargs에 전달하거나,
-        # 또는 내부적으로 최적화된 값을 사용할 수 있음.
-        # 언어 설정 등은 pipeline 생성 시 또는 호출 시 파라미터로 전달 가능
-        whisper_params = {}
-        if language:
-            whisper_params["language"] = language # whisper pipeline이 이 파라미터를 지원하는지 확인 필요
-
-        # STT 파이프라인 실행
-        # 로컬 파일의 경우, 파이프라인이 내부적으로 파일을 읽음.
-        # 매우 큰 파일의 경우, 메모리 문제를 피하기 위해 스트리밍 방식으로 읽도록 하거나,
-        # 파일을 직접 파이프라인에 전달하기 전에 바이트로 읽어서 전달할 수 있음.
-        # 예: with open(audio_path, "rb") as f: audio_bytes = f.read() -> 파이프라인(audio_bytes)
-        # 이 부분은 pipeline 구현에 따라 달라짐. 기본적으로는 파일 경로 전달.
-
+        # 파이프라인은 파일 경로를 받아 내부적으로 처리
         transcription_result = stt_pipeline(
             audio_path,
             chunk_length_s=chunk_length_s,
             stride_length_s=stride_length_s,
-            return_timestamps=False, # 타임스탬프 필요시 True로 하고 후처리
-            # language=language, # pipeline 생성 시 지정했다면 중복일 수 있음
-            # 아래는 whisper 모델에 직접 전달하고 싶을 때 고려 (pipeline 생성 시 model_kwargs 사용)
-            # generate_kwargs={"temperature": 0.1, "no_repeat_ngram_size": 3}
+            return_timestamps=False,
+            # language=language # 파이프라인 생성 시 언어 설정하는 것이 더 일반적
         )
-        
         raw_text = transcription_result["text"] if isinstance(transcription_result, dict) and "text" in transcription_result else str(transcription_result)
 
     except Exception as e:
         print(f"STT 서비스 오류: Pipeline 처리 중 예외 - {e}")
-        # 파이프라인 오류 시 더 상세한 정보 로깅 필요
         raise RuntimeError(f"ASR Pipeline 처리 중 오류 발생: {e}") from e
     
-    # 후처리 적용
-    final_text = _post_process_transcription(raw_text)
+    final_text = _post_process_transcription(raw_text) # 텍스트 후처리
     print(f"  Pipeline STT 처리 완료 (후처리 전 길이: {len(raw_text)}, 후 길이: {len(final_text)})")
     return final_text
 
@@ -215,41 +191,37 @@ async def _perform_stt_with_pipeline(
 # === FastAPI 서비스 인터페이스 함수 (라우터에서 호출됨) ===
 async def process_uploaded_rc_file_to_text(
     rc_file: UploadFile,
-    stt_pipeline_instance: Any, # app.state 등에서 주입받을 미리 로드된 ASR 파이프라인
-    # API를 통해 받고 싶은 STT 관련 설정 파라미터들:
+    stt_pipeline_instance: Any,
     target_language: Optional[str] = "ko",
-    pipeline_chunk_length_s: int = 30, # 기본값 30초
-    pipeline_stride_length_s: int = 5   # 기본값 5초 (오버랩)
+    pipeline_chunk_length_s: int = 30,
+    pipeline_stride_length_s: int = 5
 ) -> str:
-    """
-    업로드된 녹음 파일(rc_file: UploadFile)을 받아 STT 처리를 수행하고 텍스트를 반환합니다.
-    Hugging Face ASR Pipeline을 사용합니다.
-    """
     print(f"STT 서비스 수신: '{rc_file.filename}' (타입: {rc_file.content_type}), 언어: {target_language}")
     service_start_time = time.time()
 
     unique_id = uuid.uuid4()
-    file_extension = os.path.splitext(rc_file.filename)[1] if rc_file.filename else ".m4a" # 기본 확장자
+    file_extension = os.path.splitext(rc_file.filename)[1] if rc_file.filename else ".m4a"
     temp_file_name = f"upload_{unique_id}{file_extension}"
     temp_file_path = os.path.join(TEMP_UPLOAD_DIR, temp_file_name)
 
+    transcribed_text = "" # 결과 변수 초기화
+
     try:
         # 1. UploadFile을 임시 파일로 저장
-        # (참고: ffmpeg_read는 바이트 배열을 직접 받을 수 있으므로, 파일 저장 없이 메모리에서 처리 가능성도 있음)
-        # 하지만 파이프라인이 파일 경로를 더 잘 처리하는 경우가 많고, 디버깅에도 용이.
-        file_content = await rc_file.read() # 파일을 메모리로 읽음 (큰 파일 주의)
-        with open(temp_file_path, "wb") as buffer:
-            buffer.write(file_content)
-        
-        print(f"  임시 파일 저장: {temp_file_path} (크기: {len(file_content)} bytes)")
-
-        # (선택적) 오디오 파일 유효성 검사 또는 기본 정보 로깅
-        # if _PACKAGES_AVAILABLE:
-        #     try:
-        #         audio_segment = AudioSegment.from_file(temp_file_path, format=file_extension.lstrip('.'))
-        #         print(f"  오디오 정보: 길이={audio_segment.duration_seconds():.2f}s, 채널={audio_segment.channels}, 프레임률={audio_segment.frame_rate}")
-        #     except Exception as e_audio_info:
-        #         print(f"STT 서비스 경고: 업로드된 오디오 파일 정보 읽기 실패 - {e_audio_info}")
+        # 파일을 열고 쓰는 컨텍스트 관리자(with)를 사용하여 파일이 확실히 닫히도록 함
+        try:
+            # 파일을 비동기로 읽고 동기로 쓰는 것은 주의가 필요할 수 있으나,
+            # UploadFile.read()는 awaitable 이므로 비동기로 읽는 것이 맞음.
+            file_content = await rc_file.read() # 파일을 메모리로 먼저 읽음
+            with open(temp_file_path, "wb") as buffer: # 파일 쓰기 (동기)
+                buffer.write(file_content)
+            print(f"  임시 파일 저장: {temp_file_path} (크기: {len(file_content)} bytes)")
+        finally:
+            # UploadFile 객체의 내부 파일 포인터를 닫아주는 것이 좋음
+            # (FastAPI가 요청 종료 시 처리하지만, 명시적으로 하는 것이 안전할 수 있음)
+            if hasattr(rc_file, 'file') and rc_file.file and not rc_file.file.closed: # type: ignore
+                await rc_file.close() # UploadFile 객체의 close()는 비동기일 수 있음
+                print(f"  업로드 파일 핸들({rc_file.filename}) 닫기 완료.")
 
 
         # 2. STT 핵심 처리 함수 호출 (동기 함수이므로 비동기적으로 실행)
@@ -263,30 +235,30 @@ async def process_uploaded_rc_file_to_text(
         )
         
         processing_time = time.time() - service_start_time
+        # _format_time 함수가 현재 스코프에 정의되어 있는지 확인!
+        # 만약 stt_service.py 최상단에 있다면 문제 없음.
         print(f"STT 서비스 완료: '{rc_file.filename}'. 소요시간: {_format_time(processing_time)}")
         return transcribed_text
 
-    except FileNotFoundError as e_fnf:
-        print(f"STT 서비스 오류 (파일): '{rc_file.filename}' - {e_fnf}")
-        raise RuntimeError(f"처리할 파일을 찾을 수 없습니다: {rc_file.filename}") from e_fnf
-    except ValueError as e_val: # 오디오 포맷 문제 등
-        print(f"STT 서비스 오류 (데이터): '{rc_file.filename}' - {e_val}")
-        raise ValueError(f"제공된 파일의 데이터 형식이 올바르지 않거나 처리할 수 없습니다: {rc_file.filename}") from e_val
-    except RuntimeError as e_rt: # 모델 실행 문제 등
-        print(f"STT 서비스 오류 (런타임): '{rc_file.filename}' - {e_rt}")
-        raise RuntimeError(f"음성 인식 처리 중 내부 서버 오류가 발생했습니다.") from e_rt
-    except Exception as e:
-        print(f"STT 서비스 알 수 없는 오류 ({rc_file.filename}): {type(e).__name__} - {e}")
-        raise RuntimeError(f"음성 인식 처리 중 알 수 없는 오류가 발생했습니다.") from e
+    except Exception as e: # 모든 예외를 잡아서 로깅하고, 라우터에서 적절히 처리하도록 다시 발생
+        print(f"STT 서비스 처리 중 오류 발생 ({rc_file.filename}): {type(e).__name__} - {e}")
+        # 여기서 특정 예외 타입에 따라 다른 처리를 할 수도 있음
+        # 예를 들어, FileNotFoundError, ValueError 등
+        raise # 현재는 모든 예외를 RuntimeError로 래핑하지 않고 그대로 라우터로 전달
+
     finally:
+        # 임시 파일 삭제 시도
         if os.path.exists(temp_file_path):
             try:
+                # (선택적) 파일 삭제 전 아주 짧은 지연 시간 추가 (OS가 파일 잠금 해제할 시간)
+                # await asyncio.sleep(0.1) # 이 부분은 신중히 사용, 꼭 필요한지 테스트 필요
                 os.remove(temp_file_path)
+                print(f"  임시 파일 삭제 완료: {temp_file_path}")
+            except PermissionError as e_perm:
+                # 이 오류가 계속 발생한다면, 파일이 여전히 잠겨있다는 의미
+                print(f"STT 서비스 경고: 임시 파일 삭제 실패 (PermissionError) '{temp_file_path}' - {e_perm}")
+                # 이 경우, 서버를 관리자 권한으로 실행하거나,
+                # 파일 잠금을 유발하는 다른 원인을 찾아야 할 수 있습니다.
+                # 또는 임시 파일 정리 스케줄러를 두는 방법도 고려할 수 있습니다 (복잡도 증가).
             except Exception as e_remove:
-                print(f"STT 서비스 경고: 임시 파일 삭제 실패 '{temp_file_path}' - {e_remove}")
-        
-        if not rc_file.file.closed: # type: ignore
-            try:
-                await rc_file.close()
-            except Exception as e_close: # pragma: no cover
-                print(f"STT 서비스 경고: 업로드 파일 닫기 실패 '{rc_file.filename}' - {e_close}")
+                print(f"STT 서비스 경고: 임시 파일 삭제 중 일반 오류 '{temp_file_path}' - {e_remove}")

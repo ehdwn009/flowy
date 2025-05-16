@@ -83,12 +83,9 @@ class RepresentativeUnnecessarySentenceModel(BaseModel): # 기존 Representative
     sentence: str = Field(description="대표적인 불필요 문장")
     reason: str = Field(description="불필요하다고 판단한 이유")
 
-class MeetingFeedbackResponseModel(BaseModel): # 기존 MeetingFeedbackResponse 모델 이름 변경 (선택적)
-    # API 응답 JSON의 최상위 키에 맞춰 필드명 지정
+class MeetingFeedbackResponseModel(BaseModel):
     overall_statistics: OverallStatisticsModel = Field(description="회의록 문장 전체 통계")
     representative_unnecessary: List[RepresentativeUnnecessarySentenceModel] = Field(description="대표적인 불필요 문장 목록")
-
-    # 필요하다면 추가적인 메시지나 문장 분리 결과도 여기에 포함할 수 있습니다.
     message: Optional[str] = Field(None, description="처리 결과 메시지")
     rc_txt_splitted: Optional[List[str]] = Field(None, description="문장 분리 결과 (클라이언트 요청 시)")
 
@@ -115,8 +112,7 @@ class FeedbackRequest(MeetingInfoBase):
 # --- (추가 제안) 통합 분석 요청 및 응답 모델 ---
 # 만약 하나의 API로 모든 것을 처리한다면 사용할 수 있는 모델
 class FullAnalysisRequest(MeetingInfoBase):
-    # rc_file 또는 rc_txt 중 하나는 필수로 받도록 설정 필요 (커스텀 validator 또는 엔드포인트 분리)
-    rc_file: Optional[UploadFile] = Field(None, description="녹음 파일 (m4a)") # 파일 업로드 시
+    rc_file: Optional[UploadFile] = Field(None, description="녹음 파일 (m4a)")
     rc_txt: Optional[str] = Field(None, description="회의록 텍스트 (텍스트 직접 입력 시)")
 
     # Pydantic 모델의 root_validator를 사용하여 rc_file과 rc_txt 중 하나만 존재하도록 강제할 수 있음
@@ -132,7 +128,8 @@ class FullAnalysisRequest(MeetingInfoBase):
 class FullAnalysisResponse(BaseModel):
     meeting_info: MeetingInfoBase
     stt_result: Optional[STTResponse] = None
-    summary_result: Optional[SummarizationResponse] = None
-    action_items_result: Optional[ActionAssignmentResponse] = None
-    feedback_result: Optional[MeetingFeedbackResponse] = None
+    summary_result: Optional[SummarizationResponse] = None # SummarizationResponse 모델도 정의되어 있어야 함
+    action_items_result: Optional[ActionAssignmentResponse] = None # ActionAssignmentResponse 모델도 정의되어 있어야 함
+    # feedback_result: Optional[MeetingFeedbackResponse] = None # <--- 여기가 문제!
+    feedback_result: Optional[MeetingFeedbackResponseModel] = None # <--- 이렇게 수정!
     message: str = "분석이 완료되었습니다."
